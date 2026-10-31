@@ -1,0 +1,373 @@
+--[[
+    CRK SCRIPT (FINAL)
+    Features: Real Kill Players, Auto Kill Monsters, Speed, Jump, Noclip
+    Logo: Blurred Background with "CRK"
+]]
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local rootPart = character:WaitForChild("HumanoidRootPart")
+
+-- ============ CONFIG ============
+local MONSTER_KEYWORDS = {"monster", "zombie", "enemy", "slayer", "mob", "boss", "demon"}
+local KILL_RANGE = 100
+
+-- Remote config (server damage endpoint)
+local REMOTE_KEY = "EMMFOSS__!ZCNSJNXCSDWQSANBX"
+local function getDamageRemote()
+    local folder = ReplicatedStorage:FindFirstChild("ALLREMBINDS")
+    return folder and folder:FindFirstChild("Pls_Dont_Hack_Plssssssssss")
+end
+
+-- Get current tool M1 damage key (matches server tool damage)
+local function getM1Key()
+    local stats2 = player:FindFirstChild("PlayerStats2")
+    local activeTool = stats2 and stats2:FindFirstChild("ActiveTool")
+    local name = activeTool and tostring(activeTool.Value) or ""
+    if name == "" then return "M1:Combat" end
+    return "M1:" .. name
+end
+
+-- ============ STATE ============
+local playerKillActive = false
+local monsterKillActive = false
+local noclipActive = false
+local noclipConn = nil
+
+-- ============ LOGIC: REAL PLAYER KILL ============
+local function startPlayerKill()
+    if playerKillActive then return end
+    playerKillActive = true
+
+    local damageRemote = getDamageRemote()
+    if not damageRemote then
+        warn("[KillPlayer] Damage remote not found")
+        playerKillActive = false
+        return
+    end
+
+    task.spawn(function()
+        while playerKillActive do
+            task.wait(0.05)
+            local char = player.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if not char or not hum or hum.Health <= 0 or not hrp then continue end
+
+            local K = getM1Key()
+
+            for _, otherPlayer in pairs(Players:GetPlayers()) do
+                if not playerKillActive then break end
+                if otherPlayer ~= player then
+                    local oChar = otherPlayer.Character
+                    local oHum = oChar and oChar:FindFirstChildOfClass("Humanoid")
+                    local oHrp = oChar and oChar:FindFirstChild("HumanoidRootPart")
+                    if oChar and oHum and oHum.Health > 0 and oHrp then
+                        local dist = (hrp.Position - oHrp.Position).Magnitude
+                        if dist < 50 then
+                            pcall(function()
+                                damageRemote:FireServer(REMOTE_KEY, "Main_Damger_OC_R", {
+                                    oChar, { D = math.huge, K = K, N = 4, F = char }
+                                })
+                            end)
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
+local function stopPlayerKill()
+    playerKillActive = false
+end
+
+-- ============ LOGIC: AUTO KILL MONSTERS ============
+local function isMonster(model)
+    if not model or not model:IsA("Model") then return false end
+    local name = model.Name:lower()
+    for _, kw in pairs(MONSTER_KEYWORDS) do
+        if name:find(kw) then return true end
+    end
+    return false
+end
+
+local function startMonsterKill()
+    if monsterKillActive then return end
+    monsterKillActive = true
+
+    local damageRemote = getDamageRemote()
+    if not damageRemote then
+        warn("[KillMonster] Damage remote not found")
+        monsterKillActive = false
+        return
+    end
+
+    task.spawn(function()
+        while monsterKillActive do
+            task.wait(0.05)
+            local char = player.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if not char or not hum or hum.Health <= 0 or not hrp then continue end
+
+            local K = getM1Key()
+            local charsFolder = Workspace:FindFirstChild("Characters")
+            if not charsFolder then continue end
+
+            for _, obj in ipairs(charsFolder:GetChildren()) do
+                if not monsterKillActive then break end
+                if isMonster(obj) then
+                    local oHum = obj:FindFirstChildOfClass("Humanoid")
+                    local oHrp = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso")
+                    if oHum and oHum.Health > 0 and oHrp then
+                        local dist = (hrp.Position - oHrp.Position).Magnitude
+                        if dist < KILL_RANGE then
+                            pcall(function()
+                                damageRemote:FireServer(REMOTE_KEY, "Main_Damger_OC_R", {
+                                    obj, { D = math.huge, K = K, N = 4, F = char }
+                                })
+                            end)
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
+local function stopMonsterKill()
+    monsterKillActive = false
+end
+
+-- ============ LOGIC: NOCLIP ============
+local function toggleNoclip(state)
+    noclipActive = state
+    if state then
+        if noclipConn then noclipConn:Disconnect() end
+        noclipConn = RunService.Stepped:Connect(function()
+            local char = player.Character
+            if noclipActive and char then
+                for _, part in pairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                    end
+                end
+            end
+        end)
+    else
+        if noclipConn then
+            noclipConn:Disconnect()
+            noclipConn = nil
+        end
+        local char = player.Character
+        if char then
+            for _, part in pairs(char:GetDescendants()) do
+                if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                    part.CanCollide = true
+                end
+            end
+        end
+    end
+end
+
+-- ============ LOGIC: SPEED & JUMP ============
+local function setSpeed(val)
+    local char = player.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then hum.WalkSpeed = val end
+end
+
+local function setJump(val)
+    local char = player.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.UseJumpPower = true
+        hum.JumpPower = val
+    end
+end
+
+-- ============ GUI BUILD ============
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "CRK_GUI"
+screenGui.ResetOnSpawn = false
+screenGui.IgnoreGuiInset = true
+screenGui.Parent = playerGui
+
+-- DRAG SYSTEM
+local function makeDraggable(frame, dragHandle)
+    local dragging, dragStart, startPos
+    dragHandle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true; dragStart = input.Position; startPos = frame.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+    dragHandle.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            if dragging then
+                local delta = input.Position - dragStart
+                frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+            end
+        end
+    end)
+end
+
+-- CRK LOGO (Blurred)
+local logo = Instance.new("TextButton")
+logo.Size = UDim2.new(0, 60, 0, 60)
+logo.Position = UDim2.new(0, 20, 0.5, -30)
+logo.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+logo.Text = "CRK"; logo.TextColor3 = Color3.fromRGB(255, 255, 255)
+logo.Font = Enum.Font.GothamBold; logo.TextSize = 20
+logo.AutoButtonColor = false; logo.BorderSizePixel = 0; logo.Active = true
+logo.Parent = screenGui
+
+local logoCorner = Instance.new("UICorner", logo)
+logoCorner.CornerRadius = UDim.new(0.5, 0)
+
+local logoStroke = Instance.new("UIStroke", logo)
+logoStroke.Color = Color3.fromRGB(150, 150, 255); logoStroke.Thickness = 3
+
+makeDraggable(logo, logo)
+
+-- MAIN PANEL
+local panel = Instance.new("Frame")
+panel.Size = UDim2.new(0, 400, 0, 320)
+panel.Position = UDim2.new(0.5, -200, 0.5, -160)
+panel.BackgroundColor3 = Color3.fromRGB(22, 22, 32)
+panel.BorderSizePixel = 0; panel.Visible = false; panel.Active = true
+panel.Parent = screenGui
+Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 14)
+local panelStroke = Instance.new("UIStroke", panel)
+panelStroke.Color = Color3.fromRGB(150, 150, 255); panelStroke.Thickness = 2
+
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 45)
+titleBar.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+titleBar.BorderSizePixel = 0; titleBar.Parent = panel
+Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 14)
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, -90, 1, 0); titleLabel.Position = UDim2.new(0, 15, 0, 0)
+titleLabel.BackgroundTransparency = 1; titleLabel.Text = "⚡ CRK HUB"
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255); titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextSize = 18; titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = titleBar
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 30, 0, 30); closeBtn.Position = UDim2.new(1, -40, 0, 7)
+closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 60); closeBtn.Text = "✕"
+closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255); closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextSize = 16; closeBtn.BorderSizePixel = 0; closeBtn.Parent = titleBar
+Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 8)
+makeDraggable(panel, titleBar)
+
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1, -10, 1, -55); scroll.Position = UDim2.new(0, 5, 0, 50)
+scroll.BackgroundTransparency = 1; scroll.ScrollBarThickness = 4
+scroll.ScrollBarImageColor3 = Color3.fromRGB(150, 150, 255); scroll.Parent = panel
+
+local grid = Instance.new("UIGridLayout")
+grid.CellSize = UDim2.new(0.5, -10, 0, 38); grid.CellPadding = UDim2.new(0, 10, 0, 8)
+grid.SortOrder = Enum.SortOrder.LayoutOrder; grid.Parent = scroll
+
+local function makeRow(labelText, defaultText, callback)
+    local row = Instance.new("Frame")
+    row.BackgroundColor3 = Color3.fromRGB(32, 32, 46); row.BorderSizePixel = 0; row.Parent = scroll
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
+
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Size = UDim2.new(0.5, 0, 1, 0); nameLabel.Position = UDim2.new(0, 10, 0, 0)
+    nameLabel.BackgroundTransparency = 1; nameLabel.Text = labelText
+    nameLabel.TextColor3 = Color3.fromRGB(220, 220, 235); nameLabel.Font = Enum.Font.GothamMedium
+    nameLabel.TextSize = 12; nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+    nameLabel.Parent = row
+
+    local actionBtn = Instance.new("TextButton")
+    actionBtn.Size = UDim2.new(0.45, 0, 0, 26); actionBtn.Position = UDim2.new(0.53, 0, 0, 6)
+    actionBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 100); actionBtn.Text = defaultText
+    actionBtn.TextColor3 = Color3.fromRGB(255, 255, 255); actionBtn.Font = Enum.Font.GothamBold
+    actionBtn.TextSize = 12; actionBtn.BorderSizePixel = 0; actionBtn.AutoButtonColor = false
+    actionBtn.Parent = row
+    Instance.new("UICorner", actionBtn).CornerRadius = UDim.new(0, 6)
+
+    actionBtn.MouseButton1Click:Connect(function() callback(actionBtn) end)
+    return actionBtn
+end
+
+-- ============ POPULATE ROWS ============
+local killBtn = makeRow("☠️ REAL KILL", "OFF", function(btn)
+    if playerKillActive then
+        stopPlayerKill(); btn.Text = "OFF"; btn.BackgroundColor3 = Color3.fromRGB(60, 60, 100)
+    else
+        startPlayerKill(); btn.Text = "ON"; btn.BackgroundColor3 = Color3.fromRGB(80, 200, 120)
+    end
+end)
+
+local monsterBtn = makeRow("💀 KILL MONSTERS", "OFF", function(btn)
+    if monsterKillActive then
+        stopMonsterKill(); btn.Text = "OFF"; btn.BackgroundColor3 = Color3.fromRGB(60, 60, 100)
+    else
+        startMonsterKill(); btn.Text = "ON"; btn.BackgroundColor3 = Color3.fromRGB(80, 200, 120)
+    end
+end)
+
+local noclipBtn = makeRow("🚶 Noclip", "OFF", function(btn)
+    if noclipActive then
+        toggleNoclip(false); btn.Text = "OFF"; btn.BackgroundColor3 = Color3.fromRGB(60, 60, 100)
+    else
+        toggleNoclip(true); btn.Text = "ON"; btn.BackgroundColor3 = Color3.fromRGB(80, 200, 120)
+    end
+end)
+
+makeRow("💨 Speed 150", "SET", function(btn) setSpeed(150) end)
+makeRow("💨 Speed Reset", "SET", function(btn) setSpeed(16) end)
+
+makeRow("🦘 Jump 200", "SET", function(btn) setJump(200) end)
+makeRow("🦘 Jump Reset", "SET", function(btn) setJump(50) end)
+
+scroll.CanvasSize = UDim2.new(0, 0, 0, grid.AbsoluteContentSize.Y + 10)
+grid:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    scroll.CanvasSize = UDim2.new(0, 0, 0, grid.AbsoluteContentSize.Y + 10)
+end)
+
+-- ============ TOGGLE PANEL ============
+local panelOpen = false
+local tweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+local function togglePanel()
+    panelOpen = not panelOpen
+    if panelOpen then
+        panel.Visible = true; panel.Size = UDim2.new(0, 0, 0, 0); panel.BackgroundTransparency = 1
+        TweenService:Create(panel, tweenInfo, {Size = UDim2.new(0, 400, 0, 320), BackgroundTransparency = 0}):Play()
+    else
+        local t = TweenService:Create(panel, tweenInfo, {Size = UDim2.new(0, 0, 0, 0), BackgroundTransparency = 1})
+        t:Play(); t.Completed:Connect(function() panel.Visible = false end)
+    end
+end
+
+logo.MouseButton1Click:Connect(togglePanel)
+closeBtn.MouseButton1Click:Connect(togglePanel)
+
+-- ============ RESPAWN HANDLER ============
+player.CharacterAdded:Connect(function(newChar)
+    character = newChar
+    humanoid = newChar:WaitForChild("Humanoid")
+    rootPart = newChar:WaitForChild("HumanoidRootPart")
+    playerKillActive = false
+    monsterKillActive = false
+    noclipActive = false
+    if noclipConn then noclipConn:Disconnect() noclipConn = nil end
+end)
